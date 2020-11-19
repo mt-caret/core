@@ -1,5 +1,6 @@
 (library (name linux_ext) (public_name core.linux_ext)
  (libraries core_kernel.bounded_int_table core) (c_names linux_ext_stubs)
+ (c_library_flags :standard -luring)
  (preprocessor_deps config.h) (preprocess (pps ppx_jane)))
 
 (rule (targets config.h) (deps)

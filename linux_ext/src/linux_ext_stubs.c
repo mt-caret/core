@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <sys/prctl.h>
 #include <errno.h>
@@ -32,6 +33,9 @@
 #include <assert.h>
 #include <limits.h>
 #include <linux/limits.h> /* needed to build with musl */
+
+// TOIMPL: move this to jst-config?
+#include <liburing.h>
 
 #include <sys/sysinfo.h>
 

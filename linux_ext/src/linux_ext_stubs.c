@@ -26,6 +26,7 @@
 #include <sys/epoll.h>
 #include <sys/resource.h>
 #include <sys/xattr.h>
+#include <poll.h>
 #ifndef ENOATTR
 # define ENOATTR ENODATA
 #endif
@@ -549,6 +550,106 @@ CAMLprim value core_linux_epoll_offsetof_readyfd(value __unused v_unit)
 CAMLprim value core_linux_epoll_offsetof_readyflags(value __unused v_unit)
 {
   return Val_int( offsetof(struct epoll_event, events));
+}
+
+/** Core io_uring methods **/
+
+#define POLL_FLAG(FLAG) DEFINE_INT63_CONSTANT (core_linux_poll_##FLAG##_flag, FLAG)
+
+POLL_FLAG(POLLIN)
+POLL_FLAG(POLLOUT)
+POLL_FLAG(POLLPRI)
+POLL_FLAG(POLLERR)
+POLL_FLAG(POLLHUP)
+
+#define Io_uring_val(v) ((struct io_uring *) Data_abstract_val(v))
+
+CAMLprim value core_linux_io_uring_queue_init(value v_entries)
+{
+  int retcode;
+  value io_uring = caml_alloc((sizeof(struct io_uring) + 7) / 8, Abstract_tag);
+
+  // TOIMPL : make it possible to set IORING_SETUP_IOPOLL and IORING_SETUP_SQPOLL here.
+  retcode = io_uring_queue_init(Int_val(v_entries),
+                               Io_uring_val(io_uring),
+                               0);
+
+  if (retcode < 0) uerror("io_uring_queue_init", Nothing);
+
+  return io_uring;
+}
+
+CAMLprim value core_linux_io_uring_prep_poll_add(value v_io_uring, value v_fd, value v_flags, value v_user_data)
+{
+  struct io_uring_sqe *sqe = io_uring_get_sqe(Io_uring_val(v_io_uring));
+
+  if (sqe == NULL) {
+    return Val_bool(true);
+  } else {
+    io_uring_prep_poll_add(sqe,
+                          Long_val(v_fd),
+                          Int63_val(v_flags));
+    io_uring_sqe_set_data(sqe, (void *) Int63_val(v_user_data));
+    return Val_bool(false);
+  }
+}
+
+CAMLprim value core_linux_io_uring_prep_poll_remove(value v_io_uring, value v_user_data)
+{
+  struct io_uring_sqe *sqe = io_uring_get_sqe(Io_uring_val(v_io_uring));
+
+  if (sqe == NULL) {
+    return Val_bool(true);
+  } else {
+    io_uring_prep_poll_remove((struct io_uring_sqe *) Data_abstract_val(sqe),
+                              (void *) Int63_val(v_user_data));
+    return Val_bool(false);
+  }
+}
+
+CAMLprim value core_linux_io_uring_submit(value v_io_uring)
+{
+  io_uring_submit(Io_uring_val(v_io_uring));
+}
+
+#define NSECS_IN_MSEC 1000000LL
+
+CAMLprim value core_linux_io_uring_wait(value v_io_uring, value v_timeout)
+{
+  int retcode;
+  struct io_uring_cqe *cqe;
+  long long timeout = Long_val(v_timeout);
+
+  /*
+   * timeout, in milliseconds returns immediately if 0 is given, waits
+   * forever with -1 (same behavior as core_linux_epoll_wait()).
+   */
+  if (timeout == 0) {
+    /* returns immediately, skip enter()/leave() pair */
+    retcode = io_uring_peek_cqe(Io_uring_val(v_io_uring), &cqe);
+
+    if (retcode < 0) uerror("io_uring_peek_cqe", Nothing);
+  } else if (timeout < 0) {
+
+    caml_enter_blocking_section();
+    retcode = io_uring_wait_cqe(Io_uring_val(v_io_uring), &cqe);
+    caml_leave_blocking_section();
+
+    if (retcode < 0) uerror("io_uring_wait_cqe", Nothing);
+  } else {
+    struct __kernel_timespec ts = {
+      .tv_sec = timeout / NSECS_IN_MSEC,
+      .tv_nsec = timeout % NSECS_IN_MSEC
+    };
+
+    caml_enter_blocking_section();
+    retcode = io_uring_wait_cqe_timeout(Io_uring_val(v_io_uring), &cqe, &ts);
+    caml_leave_blocking_section();
+
+    if (retcode < 0) uerror("io_uring_wait_cqe_timeout", Nothing);
+  }
+
+  return Val_long(io_uring_cqe_get_data(cqe));
 }
 
 #ifdef JSC_TIMERFD

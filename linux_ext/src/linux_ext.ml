@@ -66,6 +66,37 @@ module Epoll_flags (Flag_values : sig
 
 end
 
+(* We use [Int63] rather than [Int] because these flags use 16 bits. *)
+
+module Poll_flags (Flag_values : sig
+    val in_     : Int63.t
+    val pri     : Int63.t
+    val out     : Int63.t
+    val err     : Int63.t
+    val hup     : Int63.t
+  end) = struct
+  let none = Int63.zero
+
+  include Flag_values
+
+  include Flags.Make (struct
+      let allow_intersecting = false
+      let should_print_error = true
+      let remove_zero_flags = false
+      let known =
+        [ in_, "in";
+          pri, "pri";
+          out, "out";
+          err, "err";
+          hup, "hup";
+        ]
+      ;;
+    end)
+
+end
+
+
+
 module Priority : sig
   type t [@@deriving sexp]
 
@@ -167,6 +198,26 @@ module Null_toplevel = struct
     end
 
     (* let pwait _ ~timeout:_ _      = assert false *)
+  end
+
+  module Io_uring = struct
+    module Flags = Poll_flags (struct
+        let in_     = Int63.of_int (1 lsl 0)
+        let pri     = Int63.of_int (1 lsl 1)
+        let out     = Int63.of_int (1 lsl 2)
+        let err     = Int63.of_int (1 lsl 3)
+        let hup     = Int63.of_int (1 lsl 4)
+      end)
+
+    type t = [ `Io_uring_is_not_implemented ]
+
+    let create ~entries:_ = assert false
+
+    let poll_add _ _ _ ~tag:_ = assert false
+
+    let poll_remove _ ~tag:_ = assert false
+
+    let submit _ = assert false
   end
 end
 module Null : Linux_ext_intf.S = struct
@@ -1037,6 +1088,39 @@ module Epoll = struct
    * ;; *)
 
   let create = Ok create
+end
+
+module Io_uring = struct
+  external flag_pollin  : unit -> Int63.t  = "core_linux_poll_POLLIN_flag"
+  external flag_pollpri : unit -> Int63.t  = "core_linux_poll_POLLPRI_flag"
+  external flag_pollout : unit -> Int63.t  = "core_linux_poll_POLLOUT_flag"
+  external flag_pollerr : unit -> Int63.t  = "core_linux_poll_POLLERR_flag"
+  external flag_pollhup : unit -> Int63.t  = "core_linux_poll_POLLHUP_flag"
+
+  module Flags = Poll_flags (struct
+      let in_ = flag_pollin ()
+      let pri = flag_pollpri ()
+      let out = flag_pollout ()
+      let err = flag_pollerr ()
+      let hup = flag_pollhup ()
+    end)
+
+  (* TOIMPL: flesh out the interface here *)
+  type t
+
+  external create : entries:Int63.t -> t =
+    "core_linux_io_uring_queue_init"
+
+  external poll_add : t -> File_descr.t -> Flags.t -> tag:Int63.t -> bool =
+    "core_linux_io_uring_prep_poll_add"
+  external poll_remove : t -> tag:Int63.t -> bool =
+    "core_linux_io_uring_prep_poll_remove"
+
+  external submit : t -> Int63.t =
+    "core_linux_io_uring_submit"
+
+  external wait : t -> Int63.t -> Int63.t =
+    "core_linux_io_uring_wait"
 end
 
 let cores                          = Ok cores

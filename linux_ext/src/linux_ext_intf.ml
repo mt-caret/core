@@ -530,6 +530,47 @@ module type S = sig
     *)
   end
 
+  module Io_uring : sig
+
+    module Flags : sig
+      (** An [Io_uring.Flags.t] is an immutable set of poll(2) flags for which one can
+          register interest in a file descriptor.  It is implemented as a bitmask, and
+          so all operations (+, -, etc.) are constant time with no allocation.
+
+          [sexp_of_t] produces a human-readable list of bits, e.g., "(in out)". *)
+      type t [@@deriving sexp_of]
+
+      include Flags.S with type t := t
+
+      (** The names of the flags match the poll(2) man pages.  E.g. [in_] = "POLLIN",
+         [out] = "POLLOUT", etc. *)
+
+      val none    : t (** Associated fd is readable                      *)
+
+      val in_     : t (** Associated fd is readable                      *)
+
+      val pri     : t (** Urgent data available                          *)
+
+      val out     : t (** Associated fd is writable                      *)
+
+      val err     : t (** Error condition (always on, no need to set it) *)
+
+      val hup     : t (** Hang up happened (always on)                   *)
+    end
+
+    type t
+
+    val create : entries:Int63.t -> t
+
+    (** [poll_add] adds a file descriptor to listen to to the submission queue,
+        and will take effect when [submit] is called. *)
+    val poll_add : t -> File_descr.t -> Flags.t -> tag:Int63.t -> bool
+
+    val poll_remove : t -> tag:Int63.t -> bool
+
+    val submit : t -> Int63.t
+  end
+
   module Extended_file_attributes : sig
     (** Extended attributes are name:value pairs associated with inodes (files,
         directories, symlinks, etc). They are extensions to the normal attributes which

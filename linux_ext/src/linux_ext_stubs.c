@@ -609,7 +609,7 @@ CAMLprim value core_linux_io_uring_prep_poll_remove(value v_io_uring, value v_us
 
 CAMLprim value core_linux_io_uring_submit(value v_io_uring)
 {
-  io_uring_submit(Io_uring_val(v_io_uring));
+  return Val_int(io_uring_submit(Io_uring_val(v_io_uring)));
 }
 
 #define NSECS_IN_MSEC 1000000LL

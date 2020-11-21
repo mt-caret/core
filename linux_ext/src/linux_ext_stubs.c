@@ -621,6 +621,8 @@ CAMLprim value core_linux_io_uring_submit(value v_io_uring)
 
 CAMLprim value core_linux_io_uring_wait(value v_io_uring, value v_timeout)
 {
+  CAMLparam2(v_io_uring, v_timeout);
+  CAMLlocal3(cqe_list, cons, cqe_record);
   int retcode;
   struct io_uring_cqe *cqe;
   long long timeout = Long_val(v_timeout);
@@ -654,8 +656,19 @@ CAMLprim value core_linux_io_uring_wait(value v_io_uring, value v_timeout)
     if (retcode < 0) uerror("io_uring_wait_cqe_timeout", Nothing);
   }
 
-  // value v_cqe_ptr = caml_alloc(1, Abstract_tag);
-  return Val_long(cqe == NULL ? 0 : io_uring_cqe_get_data(cqe));
+  cqe_list = Val_emptylist;
+  for (int i = 0; i < retcode; i++) {
+    cqe_record = caml_alloc(2, 0);
+    Store_field(cqe_record, 0, Val_int(io_uring_cqe_get_data(cqe)));
+    Store_field(cqe_record, 1, Val_int(cqe->res));
+
+    cons = caml_alloc(2, 0);
+    Store_field(cons, 0, cqe_record);
+    Store_field(cons, 1, cqe_list);
+    cqe_list = cons;
+  }
+
+  CAMLreturn(cqe_list);
 }
 
 #ifdef JSC_TIMERFD

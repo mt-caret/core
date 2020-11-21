@@ -219,6 +219,13 @@ module Null_toplevel = struct
 
     let submit _ = assert false
 
+    module Cqe = struct
+      type t =
+        { user_data : Int63.t
+        ; ret : Int63.t
+        }
+    end
+
     let wait _ ~timeout:_ = assert false
   end
 end
@@ -1121,7 +1128,14 @@ module Io_uring = struct
   external submit : t -> Int63.t =
     "core_linux_io_uring_submit"
 
-  external wait : t -> timeout:Int63.t -> Int63.t =
+  module Cqe = struct
+    type t =
+      { user_data : Int63.t
+      ; ret : Int63.t
+      }
+  end
+
+  external wait : t -> timeout:Int63.t -> Cqe.t list =
     "core_linux_io_uring_wait"
 end
 

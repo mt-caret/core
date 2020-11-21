@@ -570,11 +570,18 @@ module type S = sig
 
     val submit : t -> Int63.t
 
+    module Cqe : sig
+      type t =
+        { user_data : Int63.t
+        ; ret : Int63.t
+        }
+    end
+
     (** [wait] waits for events until [~timeout] has passed (in nanoseconds),
         then returns the tag given to it by [poll_add] and 0 if it has timed out.
         passing in 0 for [~timeout] will cause it return immediately, and a
         negative value will cause it to wait indefinitely. *)
-    val wait : t -> timeout:Int63.t -> Int63.t
+    val wait : t -> timeout:Int63.t -> Cqe.t list
   end
 
   module Extended_file_attributes : sig

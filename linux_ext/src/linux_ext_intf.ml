@@ -569,6 +569,12 @@ module type S = sig
     val poll_remove : t -> tag:Int63.t -> bool
 
     val submit : t -> Int63.t
+
+    (** [wait] waits for events until [~timeout] has passed (in nanoseconds),
+        then returns the tag given to it by [poll_add] and 0 if it has timed out.
+        passing in 0 for [~timeout] will cause it return immediately, and a
+        negative value will cause it to wait indefinitely. *)
+    val wait : t -> timeout:Int63.t -> Int63.t
   end
 
   module Extended_file_attributes : sig

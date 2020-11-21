@@ -612,7 +612,7 @@ CAMLprim value core_linux_io_uring_submit(value v_io_uring)
   return Val_int(io_uring_submit(Io_uring_val(v_io_uring)));
 }
 
-#define NSECS_IN_MSEC 1000000LL
+#define NSECS_IN_SEC 1000000000LL
 
 CAMLprim value core_linux_io_uring_wait(value v_io_uring, value v_timeout)
 {
@@ -621,8 +621,8 @@ CAMLprim value core_linux_io_uring_wait(value v_io_uring, value v_timeout)
   long long timeout = Long_val(v_timeout);
 
   /*
-   * timeout, in milliseconds returns immediately if 0 is given, waits
-   * forever with -1 (same behavior as core_linux_epoll_wait()).
+   * timeout, in nanoseconds returns immediately if 0 is given, waits
+   * forever with -1 (similar to core_linux_epoll_wait()).
    */
   if (timeout == 0) {
     /* returns immediately, skip enter()/leave() pair */
@@ -638,8 +638,8 @@ CAMLprim value core_linux_io_uring_wait(value v_io_uring, value v_timeout)
     if (retcode < 0) uerror("io_uring_wait_cqe", Nothing);
   } else {
     struct __kernel_timespec ts = {
-      .tv_sec = timeout / NSECS_IN_MSEC,
-      .tv_nsec = timeout % NSECS_IN_MSEC
+      .tv_sec = timeout / NSECS_IN_SEC,
+      .tv_nsec = timeout % NSECS_IN_SEC
     };
 
     caml_enter_blocking_section();
@@ -649,7 +649,7 @@ CAMLprim value core_linux_io_uring_wait(value v_io_uring, value v_timeout)
     if (retcode < 0) uerror("io_uring_wait_cqe_timeout", Nothing);
   }
 
-  return Val_long(io_uring_cqe_get_data(cqe));
+  return Val_long(cqe == NULL ? 0 : io_uring_cqe_get_data(cqe));
 }
 
 #ifdef JSC_TIMERFD

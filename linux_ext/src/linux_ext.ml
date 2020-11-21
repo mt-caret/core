@@ -218,6 +218,8 @@ module Null_toplevel = struct
     let poll_remove _ ~tag:_ = assert false
 
     let submit _ = assert false
+
+    let wait _ ~timeout:_ = assert false
   end
 end
 module Null : Linux_ext_intf.S = struct
@@ -1119,7 +1121,7 @@ module Io_uring = struct
   external submit : t -> Int63.t =
     "core_linux_io_uring_submit"
 
-  external wait : t -> Int63.t -> Int63.t =
+  external wait : t -> timeout:Int63.t -> Int63.t =
     "core_linux_io_uring_wait"
 end
 

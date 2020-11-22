@@ -220,7 +220,7 @@ module Null_toplevel = struct
 
     type t = [ `Io_uring_is_not_implemented ]
 
-    let create ~entries:_ = assert false
+    let create ~max_submission_entries:_ = assert false
 
     let close _ = assert false
 
@@ -1160,7 +1160,7 @@ module Io_uring = struct
   (* TOIMPL: flesh out the interface here *)
   type t
 
-  external create : entries:Int63.t -> t =
+  external create : max_submission_entries:Int63.t -> t =
     "core_linux_io_uring_queue_init"
 
   external close : t -> unit =

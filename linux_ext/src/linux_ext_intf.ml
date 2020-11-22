@@ -570,7 +570,7 @@ module type S = sig
 
     type t
 
-    val create : entries:Int63.t -> t
+    val create : max_submission_entries:Int63.t -> t
 
     val close : t -> unit
 

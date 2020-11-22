@@ -558,30 +558,48 @@ module type S = sig
       val hup     : t (** Hang up happened (always on)                   *)
     end
 
+    (* [Tag.t] is a bit-packed tuple of a file descriptor and poll flags *)
+    module Tag : sig
+      type t
+
+      val create : fd:File_descr.t -> flags:Flags.t -> t
+
+      val file_descr : t -> File_descr.t
+      val flags : t -> Flags.t
+    end
+
     type t
 
     val create : entries:Int63.t -> t
 
+    val close : t -> unit
+
     (** [poll_add] adds a file descriptor to listen to to the submission queue,
         and will take effect when [submit] is called. *)
-    val poll_add : t -> File_descr.t -> Flags.t -> tag:Int63.t -> bool
+    val poll_add : t -> File_descr.t -> Flags.t -> bool
 
-    val poll_remove : t -> tag:Int63.t -> bool
+    val poll_remove : t -> File_descr.t -> Flags.t -> bool
 
     val submit : t -> Int63.t
 
     module Cqe : sig
       type t =
-        { user_data : Int63.t
+        { user_data : Tag.t
         ; ret : Int63.t
-        }
+        } [@@deriving sexp_of]
     end
 
+    (* TOIMPL: fix doc *)
     (** [wait] waits for events until [~timeout] has passed (in nanoseconds),
         then returns the tag given to it by [poll_add] and 0 if it has timed out.
         passing in 0 for [~timeout] will cause it return immediately, and a
         negative value will cause it to wait indefinitely. *)
-    val wait : t -> timeout:Int63.t -> Cqe.t list
+    val wait
+      : t
+      -> timeout:[ `Never | `Immediately | `After of Time_ns.Span.t ]
+      -> Cqe.t list
+
+    val wait_timeout_after : t -> Time_ns.Span.t -> Cqe.t list
   end
 
   module Extended_file_attributes : sig

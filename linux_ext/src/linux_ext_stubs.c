@@ -568,23 +568,36 @@ POLL_FLAG(POLLHUP)
 CAMLprim value core_linux_io_uring_queue_init(value v_entries)
 {
   CAMLparam1(v_entries);
-  CAMLlocal1(io_uring);
+  CAMLlocal1(v_io_uring);
 
   int retcode;
   // TOIMPL : this assumes 8 bytes in a word, probably a better way to do this...
-  io_uring = caml_alloc((sizeof(struct io_uring) + 7) / 8, Abstract_tag);
+  v_io_uring = caml_alloc((sizeof(struct io_uring) + 7) / 8, Abstract_tag);
 
   // TOIMPL : make it possible to set IORING_SETUP_IOPOLL and IORING_SETUP_SQPOLL here.
   retcode = io_uring_queue_init(Int_val(v_entries),
-                               Io_uring_val(io_uring),
+                               Io_uring_val(v_io_uring),
                                0);
 
   if (retcode < 0) uerror("io_uring_queue_init", Nothing);
 
-  CAMLreturn(io_uring);
+  CAMLreturn(v_io_uring);
 }
 
-CAMLprim value core_linux_io_uring_prep_poll_add(value v_io_uring, value v_fd, value v_flags, value v_user_data)
+CAMLprim value core_linux_io_uring_queue_exit(value v_io_uring)
+{
+  CAMLparam1(v_io_uring);
+
+  io_uring_queue_exit(Io_uring_val(v_io_uring));
+
+  CAMLreturn(Val_unit);
+}
+
+uint64_t create_user_data(value v_fd, value v_flags) {
+  return (Int63_val(v_flags) << 32) | Long_val(v_fd);
+}
+
+CAMLprim value core_linux_io_uring_prep_poll_add(value v_io_uring, value v_fd, value v_flags)
 {
   struct io_uring_sqe *sqe = io_uring_get_sqe(Io_uring_val(v_io_uring));
 
@@ -594,12 +607,12 @@ CAMLprim value core_linux_io_uring_prep_poll_add(value v_io_uring, value v_fd, v
     io_uring_prep_poll_add(sqe,
                           Long_val(v_fd),
                           Int63_val(v_flags));
-    io_uring_sqe_set_data(sqe, (void *) Int63_val(v_user_data));
+    io_uring_sqe_set_data(sqe, (void *) create_user_data(v_fd, v_flags));
     return Val_bool(false);
   }
 }
 
-CAMLprim value core_linux_io_uring_prep_poll_remove(value v_io_uring, value v_user_data)
+CAMLprim value core_linux_io_uring_prep_poll_remove(value v_io_uring, value v_fd, value v_flags)
 {
   struct io_uring_sqe *sqe = io_uring_get_sqe(Io_uring_val(v_io_uring));
 
@@ -607,7 +620,7 @@ CAMLprim value core_linux_io_uring_prep_poll_remove(value v_io_uring, value v_us
     return Val_bool(true);
   } else {
     io_uring_prep_poll_remove((struct io_uring_sqe *) Data_abstract_val(sqe),
-                              (void *) Int63_val(v_user_data));
+                              (void *) create_user_data(v_fd, v_flags));
     return Val_bool(false);
   }
 }

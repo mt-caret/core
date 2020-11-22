@@ -209,24 +209,37 @@ module Null_toplevel = struct
         let hup     = Int63.of_int (1 lsl 4)
       end)
 
+    module Tag = struct
+      type t [@@deriving sexp_of]
+
+      let create ~fd:_ ~flags:_ = assert false
+
+      let file_descr _ = assert false
+      let flags _ = assert false
+    end
+
     type t = [ `Io_uring_is_not_implemented ]
 
     let create ~entries:_ = assert false
 
-    let poll_add _ _ _ ~tag:_ = assert false
+    let close _ = assert false
 
-    let poll_remove _ ~tag:_ = assert false
+    let poll_add _ _ _  = assert false
+
+    let poll_remove _ _ _ = assert false
 
     let submit _ = assert false
 
     module Cqe = struct
       type t =
-        { user_data : Int63.t
+        { user_data : Tag.t
         ; ret : Int63.t
-        }
+        } [@@deriving sexp_of]
     end
 
     let wait _ ~timeout:_ = assert false
+
+    let wait_timeout_after _ _ = assert false
   end
 end
 module Null : Linux_ext_intf.S = struct
@@ -1114,15 +1127,48 @@ module Io_uring = struct
       let hup = flag_pollhup ()
     end)
 
+  module Tag = struct
+    type t = Int63.t
+
+    let create ~fd ~flags =
+      let fd = File_descr.to_int fd |> Int63.of_int in
+      Int63.shift_left flags 32
+      |> Int63.bit_or fd
+
+    let file_descr t =
+      Int63.bit_and t (Int63.of_int 0xffff_ffff)
+      |> Int63.to_int_exn
+      |> File_descr.of_int
+
+    let flags t = Int63.shift_right t 32
+
+    module Pretty = struct
+      type t =
+        { file_descr: File_descr.t
+        ; flags : Flags.t
+        } [@@deriving sexp_of]
+
+      let create t =
+        { file_descr = file_descr t
+        ; flags = flags t
+        }
+    end
+
+    let sexp_of_t t = Pretty.sexp_of_t (Pretty.create t)
+  end
+
   (* TOIMPL: flesh out the interface here *)
   type t
 
   external create : entries:Int63.t -> t =
     "core_linux_io_uring_queue_init"
 
-  external poll_add : t -> File_descr.t -> Flags.t -> tag:Int63.t -> bool =
+  external close : t -> unit =
+    "core_linux_io_uring_queue_exit"
+
+  external poll_add : t -> File_descr.t -> Flags.t -> bool =
     "core_linux_io_uring_prep_poll_add"
-  external poll_remove : t -> tag:Int63.t -> bool =
+  external poll_remove : t -> File_descr.t -> Flags.t -> bool =
     "core_linux_io_uring_prep_poll_remove"
 
   external submit : t -> Int63.t =
@@ -1130,13 +1176,29 @@ module Io_uring = struct
 
   module Cqe = struct
     type t =
-      { user_data : Int63.t
+      { user_data : Tag.t
       ; ret : Int63.t
-      }
+      } [@@deriving sexp_of]
   end
 
-  external wait : t -> timeout:Int63.t -> Cqe.t list =
+  external wait_internal : t -> timeout:Int63.t -> Cqe.t list =
     "core_linux_io_uring_wait"
+
+  let wait_timeout_after t span =
+    let timeout =
+      if Time_ns.Span.(span <= zero)
+      then Int63.zero
+      else Time_ns.Span.to_int63_ns span
+    in
+    wait_internal t ~timeout
+  ;;
+
+  let wait t ~timeout =
+    match timeout with
+    | `Never -> wait_internal t ~timeout:(Int63.of_int (-1))
+    | `Immediately -> wait_internal t ~timeout:Int63.zero
+    | `After span -> wait_timeout_after t span
+  ;;
 end
 
 let cores                          = Ok cores

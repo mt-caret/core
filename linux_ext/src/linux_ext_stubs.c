@@ -569,7 +569,7 @@ CAMLprim value core_linux_io_uring_queue_init(value v_entries)
 {
   CAMLparam1(v_entries);
   CAMLlocal1(v_io_uring);
-  puts("entered core_linux_io_uring_prep_queue_init");
+  // puts("entered core_linux_io_uring_prep_queue_init");
 
   int retcode;
   struct io_uring *io_uring = caml_stat_alloc(sizeof(struct io_uring));
@@ -589,7 +589,7 @@ CAMLprim value core_linux_io_uring_queue_init(value v_entries)
 CAMLprim value core_linux_io_uring_queue_exit(value v_io_uring)
 {
   CAMLparam1(v_io_uring);
-  puts("entered core_linux_io_uring_prep_queue_exit");
+  // puts("entered core_linux_io_uring_prep_queue_exit");
 
   io_uring_queue_exit(Io_uring_val(v_io_uring));
 
@@ -603,15 +603,15 @@ uint64_t create_user_data(value v_fd, value v_flags) {
 CAMLprim value core_linux_io_uring_prep_poll_add(value v_io_uring, value v_fd, value v_flags)
 {
   struct io_uring_sqe *sqe = io_uring_get_sqe(Io_uring_val(v_io_uring));
-  puts("entered core_linux_io_uring_prep_poll_add");
-  printf("fd = %d, flags = %d, user_data = %lu\n",
-      (int) Long_val(v_fd), (short) Int63_val(v_flags),  create_user_data(v_fd, v_flags));
+  // puts("entered core_linux_io_uring_prep_poll_add");
+  // printf("fd = %d, flags = %d, user_data = %lu\n",
+  //    (int) Long_val(v_fd), (short) Int63_val(v_flags),  create_user_data(v_fd, v_flags));
 
   if (sqe == NULL) {
-    puts("sqe == NULL");
+    // puts("sqe == NULL");
     return Val_bool(true);
   } else {
-    puts("sqe != NULL");
+    // puts("sqe != NULL");
     io_uring_prep_poll_add(sqe,
                           (int) Long_val(v_fd),
                           (short) Int63_val(v_flags));
@@ -623,7 +623,7 @@ CAMLprim value core_linux_io_uring_prep_poll_add(value v_io_uring, value v_fd, v
 CAMLprim value core_linux_io_uring_prep_poll_remove(value v_io_uring, value v_fd, value v_flags)
 {
   struct io_uring_sqe *sqe = io_uring_get_sqe(Io_uring_val(v_io_uring));
-  puts("entered core_linux_io_uring_prep_poll_remove");
+  // puts("entered core_linux_io_uring_prep_poll_remove");
 
   if (sqe == NULL) {
     return Val_bool(true);
@@ -636,7 +636,7 @@ CAMLprim value core_linux_io_uring_prep_poll_remove(value v_io_uring, value v_fd
 
 CAMLprim value core_linux_io_uring_submit(value v_io_uring)
 {
-  puts("entered core_linux_io_uring_prep_submit");
+  // puts("entered core_linux_io_uring_prep_submit");
   return Val_int(io_uring_submit(Io_uring_val(v_io_uring)));
 }
 
@@ -658,7 +658,8 @@ CAMLprim value core_linux_io_uring_wait(value v_io_uring, value v_timeout)
     /* returns immediately, skip enter()/leave() pair */
     retcode = io_uring_peek_cqe(Io_uring_val(v_io_uring), &cqe);
 
-    if (retcode != -EAGAIN && retcode < 0) {
+    // TOIMPL: under heavy load, we sometimes seem to get ETIME; should investigate
+    if (retcode != -EAGAIN && retcode != -ETIME && retcode < 0) {
       printf("error %d (%s)\n", -retcode, strerror(-retcode));
       printf("cqe ptr: %lu\n", (uint64_t) cqe);
       uerror("io_uring_peek_cqe", Nothing);
@@ -690,7 +691,7 @@ CAMLprim value core_linux_io_uring_wait(value v_io_uring, value v_timeout)
   cqe_list = Val_emptylist;
 
   while (cqe != NULL) {
-    printf("cqe data: %lu, res: %d\n", (uint64_t) io_uring_cqe_get_data(cqe), cqe->res);
+    //printf("cqe data: %lu, res: %d\n", (uint64_t) io_uring_cqe_get_data(cqe), cqe->res);
     cqe_record = caml_alloc(2, 0);
     Store_field(cqe_record, 0, Val_int(io_uring_cqe_get_data(cqe)));
     Store_field(cqe_record, 1, Val_int(cqe->res));
@@ -704,7 +705,7 @@ CAMLprim value core_linux_io_uring_wait(value v_io_uring, value v_timeout)
 
     retcode = io_uring_peek_cqe(Io_uring_val(v_io_uring), &cqe);
 
-    if (retcode != -EAGAIN && retcode < 0) {
+    if (retcode != -EAGAIN && retcode != -ETIME && retcode < 0) {
       printf("error %d (%s)\n", -retcode, strerror(-retcode));
       printf("cqe ptr: %lu\n", (uint64_t) cqe);
       uerror("io_uring_peek_cqe", Nothing);

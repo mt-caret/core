@@ -573,7 +573,7 @@ CAMLprim value core_linux_io_uring_queue_init(value v_entries)
 
   int retcode;
   struct io_uring *io_uring = caml_stat_alloc(sizeof(struct io_uring));
-  v_io_uring = caml_alloc(1, Abstract_tag);
+  v_io_uring = caml_alloc_small(1, Abstract_tag);
 
   // TOIMPL : make it possible to set IORING_SETUP_IOPOLL and IORING_SETUP_SQPOLL here.
   retcode = io_uring_queue_init(Int_val(v_entries),
@@ -692,11 +692,11 @@ CAMLprim value core_linux_io_uring_wait(value v_io_uring, value v_timeout)
 
   while (cqe != NULL) {
     //printf("cqe data: %lu, res: %d\n", (uint64_t) io_uring_cqe_get_data(cqe), cqe->res);
-    cqe_record = caml_alloc(2, 0);
+    cqe_record = caml_alloc_small(2, 0);
     Store_field(cqe_record, 0, Val_int(io_uring_cqe_get_data(cqe)));
     Store_field(cqe_record, 1, Val_int(cqe->res));
 
-    cons = caml_alloc(2, 0);
+    cons = caml_alloc_small(2, 0);
     Store_field(cons, 0, cqe_record);
     Store_field(cons, 1, cqe_list);
     cqe_list = cons;

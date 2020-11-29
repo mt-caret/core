@@ -558,33 +558,40 @@ module type S = sig
       val hup     : t (** Hang up happened (always on)                   *)
     end
 
-    (* [Tag.t] is a bit-packed tuple of a file descriptor and poll flags *)
-    module Tag : sig
-      type t
-
-      val create : fd:File_descr.t -> flags:Flags.t -> t
-
-      val file_descr : t -> File_descr.t
-      val flags : t -> Flags.t
+    module Kind : sig
+      type _ t =
+        | Poll : [ `Poll ] t
     end
 
-    type t
+    (* [User_data.t] contains information depending on the kind of I/O
+     * submitted. To extract information, match on [User_data.kind] and call
+     * the relevant functions as needed. *)
+    module User_data : sig
+      type 'a t
 
-    val create : max_submission_entries:Int63.t -> t
+      val kind : 'a t -> 'a Kind.t
 
-    val close : t -> unit
+      val file_descr : [ `Poll ] t -> File_descr.t
+      val flags : [ `Poll ] t -> Flags.t
+    end
+
+    type _ t
+
+    val create : max_submission_entries:Int63.t -> _ t
+
+    val close : _ t -> unit
 
     (** [poll_add] adds a file descriptor to listen to to the submission queue,
         and will take effect when [submit] is called. *)
-    val poll_add : t -> File_descr.t -> Flags.t -> bool
+    val poll_add : [> `Poll ] t -> File_descr.t -> Flags.t -> bool
 
-    val poll_remove : t -> File_descr.t -> Flags.t -> bool
+    val poll_remove : [> `Poll ] t -> File_descr.t -> Flags.t -> bool
 
-    val submit : t -> Int63.t
+    val submit : _ t -> Int63.t
 
     module Cqe : sig
-      type t =
-        { user_data : Tag.t
+      type 'a t =
+        { user_data : 'a User_data.t
         ; ret : Int63.t
         } [@@deriving sexp_of]
     end
@@ -595,11 +602,11 @@ module type S = sig
         passing in 0 for [~timeout] will cause it return immediately, and a
         negative value will cause it to wait indefinitely. *)
     val wait
-      : t
+      : 'a t
       -> timeout:[ `Never | `Immediately | `After of Time_ns.Span.t ]
-      -> Cqe.t list
+      -> 'a Cqe.t list
 
-    val wait_timeout_after : t -> Time_ns.Span.t -> Cqe.t list
+    val wait_timeout_after : 'a t -> Time_ns.Span.t -> 'a Cqe.t list
   end
 
   module Extended_file_attributes : sig

@@ -209,16 +209,21 @@ module Null_toplevel = struct
         let hup     = Int63.of_int (1 lsl 4)
       end)
 
-    module Tag = struct
-      type t [@@deriving sexp_of]
+    module Kind = struct
+      type _ t =
+        | Poll : [ `Poll ] t
+    end
 
-      let create ~fd:_ ~flags:_ = assert false
+    module User_data = struct
+      type 'a t [@@deriving sexp_of]
+
+      let kind _ = assert false
 
       let file_descr _ = assert false
       let flags _ = assert false
     end
 
-    type t = [ `Io_uring_is_not_implemented ]
+    type _ t = [ `Io_uring_is_not_implemented ]
 
     let create ~max_submission_entries:_ = assert false
 
@@ -231,8 +236,8 @@ module Null_toplevel = struct
     let submit _ = assert false
 
     module Cqe = struct
-      type t =
-        { user_data : Tag.t
+      type 'a t =
+        { user_data : 'a User_data.t
         ; ret : Int63.t
         } [@@deriving sexp_of]
     end
@@ -1127,13 +1132,16 @@ module Io_uring = struct
       let hup = flag_pollhup ()
     end)
 
-  module Tag = struct
-    type t = Int63.t
+  module Kind = struct
+    type _ t =
+      | Poll : [ `Poll ] t
+  end
 
-    let create ~fd ~flags =
-      let fd = File_descr.to_int fd |> Int63.of_int in
-      Int63.shift_left flags 32
-      |> Int63.bit_or fd
+  module User_data = struct
+    type 'a t = Int63.t [@@deriving sexp]
+
+    (* TOIMPL: it seems like there should be a more sane way to do this... *)
+    let kind (type a) (t : a t) : a Kind.t = Obj.magic Kind.Poll
 
     let file_descr t =
       Int63.bit_and t (Int63.of_int 0xffff_ffff)
@@ -1154,34 +1162,34 @@ module Io_uring = struct
         }
     end
 
-    let sexp_of_t t = Pretty.sexp_of_t (Pretty.create t)
+    let sexp_of_t _ t = Pretty.sexp_of_t (Pretty.create t)
   end
 
   (* TOIMPL: flesh out the interface here *)
-  type t
+  type _ t
 
-  external create : max_submission_entries:Int63.t -> t =
+  external create : max_submission_entries:Int63.t -> _ t =
     "core_linux_io_uring_queue_init"
 
-  external close : t -> unit =
+  external close : _ t -> unit =
     "core_linux_io_uring_queue_exit"
 
-  external poll_add : t -> File_descr.t -> Flags.t -> bool =
+  external poll_add : [> `Poll] t -> File_descr.t -> Flags.t -> bool =
     "core_linux_io_uring_prep_poll_add"
-  external poll_remove : t -> File_descr.t -> Flags.t -> bool =
+  external poll_remove : [> `Poll] t -> File_descr.t -> Flags.t -> bool =
     "core_linux_io_uring_prep_poll_remove"
 
-  external submit : t -> Int63.t =
+  external submit : _ t -> Int63.t =
     "core_linux_io_uring_submit"
 
   module Cqe = struct
-    type t =
-      { user_data : Tag.t
+    type 'a t =
+      { user_data : 'a User_data.t
       ; ret : Int63.t
       } [@@deriving sexp_of]
   end
 
-  external wait_internal : t -> timeout:Int63.t -> Cqe.t list =
+  external wait_internal : _ t -> timeout:Int63.t -> _ Cqe.t list =
     "core_linux_io_uring_wait"
 
   let wait_timeout_after t span =

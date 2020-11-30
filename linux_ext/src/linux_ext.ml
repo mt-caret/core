@@ -225,7 +225,7 @@ module Null_toplevel = struct
 
     type _ t = [ `Io_uring_is_not_implemented ]
 
-    let create ~max_submission_entries:_ = assert false
+    let create ~max_submission_entries:_ ~max_completion_entries:_ = assert false
 
     let close _ = assert false
 
@@ -1166,20 +1166,20 @@ module Io_uring = struct
   end
 
   (* TOIMPL: flesh out the interface here *)
-  type _ t
+  type _ io_uring
 
-  external create : max_submission_entries:Int63.t -> _ t =
+  external create : max_submission_entries:Int32.t -> max_completion_entries:Int32.t -> _ io_uring =
     "core_linux_io_uring_queue_init"
 
-  external close : _ t -> unit =
+  external close : _ io_uring -> unit =
     "core_linux_io_uring_queue_exit"
 
-  external poll_add : [> `Poll] t -> File_descr.t -> Flags.t -> bool =
+  external poll_add : [> `Poll] io_uring -> File_descr.t -> Flags.t -> bool =
     "core_linux_io_uring_prep_poll_add"
-  external poll_remove : [> `Poll] t -> File_descr.t -> Flags.t -> bool =
+  external poll_remove : [> `Poll] io_uring -> File_descr.t -> Flags.t -> bool =
     "core_linux_io_uring_prep_poll_remove"
 
-  external submit : _ t -> Int63.t =
+  external submit : _ io_uring -> Int63.t =
     "core_linux_io_uring_submit"
 
   module Cqe = struct
@@ -1189,7 +1189,7 @@ module Io_uring = struct
       } [@@deriving sexp_of]
   end
 
-  external wait_internal : _ t -> timeout:Int63.t -> _ Cqe.t list =
+  external wait_internal : _ io_uring -> timeout:Int63.t -> _ Cqe.t list =
     "core_linux_io_uring_wait"
 
   let wait_timeout_after t span =
@@ -1207,6 +1207,29 @@ module Io_uring = struct
     | `Immediately -> wait_internal t ~timeout:Int63.zero
     | `After span -> wait_timeout_after t span
   ;;
+
+  type 'a t =
+    { io_uring : 'a io_uring
+    ; mutable num_in_flight : int
+    ; max_completion_entries : int
+    }
+
+  let create ~max_submission_entries ~max_completion_entries =
+    { io_uring = create ~max_submission_entries ~max_completion_entries
+    ; num_in_flight = 0
+    ; max_completion_entries = Int32.to_int_exn max_completion_entries
+    }
+
+  let close t = close t.io_uring
+
+  let poll_add t = poll_add t.io_uring
+  let poll_remove t = poll_remove t.io_uring
+
+  let submit t = submit t.io_uring
+
+  let wait_timeout_after t = wait_timeout_after t.io_uring
+
+  let wait t = wait t.io_uring
 end
 
 let cores                          = Ok cores

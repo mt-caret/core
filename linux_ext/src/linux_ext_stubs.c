@@ -565,18 +565,23 @@ POLL_FLAG(POLLHUP)
 #define Io_uring_val(v) (*((struct io_uring **) Data_abstract_val(v)))
 #define Io_uring_cqe_val(v) ((struct io_uring_cqe *) Data_abstract_val(v))
 
-CAMLprim value core_linux_io_uring_queue_init(value v_entries)
+CAMLprim value core_linux_io_uring_queue_init(value v_submission_entries, value v_completion_entries)
 {
-  CAMLparam1(v_entries);
+  struct io_uring_params p;
+  CAMLparam2(v_submission_entries, v_completion_entries);
   CAMLlocal1(v_io_uring);
   // puts("entered core_linux_io_uring_prep_queue_init");
+
+  memset(&p, 0, sizeof(p));
+  p.flags = IORING_SETUP_CQSIZE;
+  p.cq_entries = Int32_val(v_completion_entries);
 
   int retcode;
   struct io_uring *io_uring = caml_stat_alloc(sizeof(struct io_uring));
   v_io_uring = caml_alloc_small(1, Abstract_tag);
 
   // TOIMPL : make it possible to set IORING_SETUP_IOPOLL and IORING_SETUP_SQPOLL here.
-  retcode = io_uring_queue_init(Int_val(v_entries),
+  retcode = io_uring_queue_init(Int32_val(v_submission_entries),
                                io_uring,
                                0);
 

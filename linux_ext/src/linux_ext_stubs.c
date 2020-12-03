@@ -562,6 +562,26 @@ POLL_FLAG(POLLPRI)
 POLL_FLAG(POLLERR)
 POLL_FLAG(POLLHUP)
 
+CAMLprim value core_linux_io_uring_sizeof_io_uring_cqe(value __unused v_unit)
+{
+  return Val_int(sizeof(struct io_uring_cqe));
+}
+
+CAMLprim value core_linux_io_uring_offsetof_user_data(value __unused v_unit)
+{
+  return Val_int(offsetof(struct io_uring_cqe, user_data));
+}
+
+CAMLprim value core_linux_io_uring_offsetof_res(value __unused v_unit)
+{
+  return Val_int(offsetof(struct io_uring_cqe, res));
+}
+
+CAMLprim value core_linux_io_uring_offsetof_flags(value __unused v_unit)
+{
+  return Val_int(offsetof(struct io_uring_cqe, flags));
+}
+
 #define Io_uring_val(v) (*((struct io_uring **) Data_abstract_val(v)))
 #define Io_uring_cqe_val(v) ((struct io_uring_cqe *) Data_abstract_val(v))
 
@@ -647,13 +667,14 @@ CAMLprim value core_linux_io_uring_submit(value v_io_uring)
 
 #define NSECS_IN_SEC 1000000000LL
 
-CAMLprim value core_linux_io_uring_wait(value v_io_uring, value v_timeout)
+CAMLprim value core_linux_io_uring_wait(value v_io_uring, value v_array, value v_timeout)
 {
-  CAMLparam2(v_io_uring, v_timeout);
-  CAMLlocal3(cqe_list, cons, cqe_record);
+  CAMLparam3(v_io_uring, v_array, v_timeout);
   int retcode;
   struct io_uring_cqe *cqe;
   long long timeout = Long_val(v_timeout);
+
+  //puts("entering core_linux_io_uring_wait");
 
   /*
    * timeout, in nanoseconds returns immediately if 0 is given, waits
@@ -693,18 +714,12 @@ CAMLprim value core_linux_io_uring_wait(value v_io_uring, value v_timeout)
     }
   }
 
-  cqe_list = Val_emptylist;
+  struct io_uring_cqe *buffer = (struct io_uring_cqe *) Caml_ba_data_val(v_array);
+  int num_seen = 0;
+  int max_cqes = Caml_ba_array_val(v_array)->dim[0] / sizeof(struct io_uring_cqe);
 
-  while (cqe != NULL) {
-    //printf("cqe data: %lu, res: %d\n", (uint64_t) io_uring_cqe_get_data(cqe), cqe->res);
-    cqe_record = caml_alloc_small(2, 0);
-    Store_field(cqe_record, 0, Val_int(io_uring_cqe_get_data(cqe)));
-    Store_field(cqe_record, 1, Val_int(cqe->res));
-
-    cons = caml_alloc_small(2, 0);
-    Store_field(cons, 0, cqe_record);
-    Store_field(cons, 1, cqe_list);
-    cqe_list = cons;
+  while (cqe != NULL && num_seen < max_cqes) {
+    memcpy(buffer, cqe, sizeof(struct io_uring_cqe));
 
     io_uring_cqe_seen(Io_uring_val(v_io_uring), cqe);
 
@@ -715,9 +730,14 @@ CAMLprim value core_linux_io_uring_wait(value v_io_uring, value v_timeout)
       printf("cqe ptr: %lu\n", (uint64_t) cqe);
       uerror("io_uring_peek_cqe", Nothing);
     }
+
+    num_seen++;
+    buffer++;
   }
 
-  CAMLreturn(cqe_list);
+  //printf("num_seen: %d\n", num_seen);
+
+  CAMLreturn(Val_int(num_seen));
 }
 
 #ifdef JSC_TIMERFD

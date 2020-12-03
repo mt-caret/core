@@ -235,16 +235,15 @@ module Null_toplevel = struct
 
     let submit _ = assert false
 
-    module Cqe = struct
-      type 'a t =
-        { user_data : 'a User_data.t
-        ; ret : Int63.t
-        } [@@deriving sexp_of]
-    end
-
     let wait _ ~timeout:_ = assert false
 
     let wait_timeout_after _ _ = assert false
+
+    let iter_completions _ ~f:_ = assert false
+
+    module Expert = struct
+      let clear_completions _ = assert false
+    end
   end
 end
 module Null : Linux_ext_intf.S = struct
@@ -1140,6 +1139,8 @@ module Io_uring = struct
   module User_data = struct
     type 'a t = Int63.t [@@deriving sexp]
 
+    let of_int = Int63.of_int
+
     (* TOIMPL: it seems like there should be a more sane way to do this... *)
     let kind (type a) (t : a t) : a Kind.t = Obj.magic Kind.Poll
 
@@ -1182,54 +1183,116 @@ module Io_uring = struct
   external submit : _ io_uring -> Int63.t =
     "core_linux_io_uring_submit"
 
-  module Cqe = struct
-    type 'a t =
-      { user_data : 'a User_data.t
-      ; ret : Int63.t
-      } [@@deriving sexp_of]
-  end
-
-  external wait_internal : _ io_uring -> timeout:Int63.t -> _ Cqe.t list =
+  external wait_internal : _ io_uring -> Bigstring.t -> timeout:Int63.t -> int =
     "core_linux_io_uring_wait"
 
-  let wait_timeout_after t span =
+  let wait_timeout_after t buffer span =
     let timeout =
       if Time_ns.Span.(span <= zero)
       then Int63.zero
       else Time_ns.Span.to_int63_ns span
     in
-    wait_internal t ~timeout
+    wait_internal t buffer ~timeout
   ;;
 
-  let wait t ~timeout =
+  let wait t buffer ~timeout =
     match timeout with
-    | `Never -> wait_internal t ~timeout:(Int63.of_int (-1))
-    | `Immediately -> wait_internal t ~timeout:Int63.zero
-    | `After span -> wait_timeout_after t span
+    | `Never -> wait_internal t buffer ~timeout:(Int63.of_int (-1))
+    | `Immediately -> wait_internal t buffer ~timeout:Int63.zero
+    | `After span -> wait_timeout_after t buffer span
   ;;
 
   type 'a t =
     { io_uring : 'a io_uring
-    ; mutable num_in_flight : int
-    ; max_completion_entries : int
+    (* TOIMPL: instead of allcating list, keep a bigstring around *)
+    ; completion_buffer : Bigstring.t
+    ; mutable completions : int
     }
+
+  external io_uring_sizeof_io_uring_cqe
+    : unit -> int = "core_linux_io_uring_sizeof_io_uring_cqe" [@@noalloc]
+
+  external io_uring_offsetof_user_data
+    : unit -> int = "core_linux_io_uring_offsetof_user_data" [@@noalloc]
+
+  external io_uring_offsetof_res
+    : unit -> int = "core_linux_io_uring_offsetof_res" [@@noalloc]
+
+  external io_uring_offsetof_flags
+    : unit -> int = "core_linux_io_uring_offsetof_flags" [@@noalloc]
+
+  let sizeof_io_uring_cqe = io_uring_sizeof_io_uring_cqe ()
+  let offsetof_user_data = io_uring_offsetof_user_data ()
+  let offsetof_res = io_uring_offsetof_res ()
+  let offsetof_flags = io_uring_offsetof_flags ()
+
+  let cqe_user_data buf i =
+    Bigstring.unsafe_get_int64_le_trunc
+      buf
+      ~pos:(i * sizeof_io_uring_cqe + offsetof_user_data)
+    |> User_data.of_int
+  ;;
+
+  let cqe_res buf i =
+    Bigstring.unsafe_get_int32_le
+      buf
+      ~pos:(i * sizeof_io_uring_cqe + offsetof_res)
+  ;;
+
+  let cqe_flags buf i =
+    Bigstring.unsafe_get_int32_le
+      buf
+      ~pos:(i * sizeof_io_uring_cqe + offsetof_flags)
+  ;;
 
   let create ~max_submission_entries ~max_completion_entries =
     { io_uring = create ~max_submission_entries ~max_completion_entries
-    ; num_in_flight = 0
-    ; max_completion_entries = Int32.to_int_exn max_completion_entries
+    ; completion_buffer =
+        (* Bigstring.create (sizeof_io_uring_cqe * Int32.to_int_exn max_completion_entries) *)
+        Bigstring.init (sizeof_io_uring_cqe * Int32.to_int_exn max_completion_entries) (Fn.const 'A')
+    ; completions = 0
     }
+  ;;
 
   let close t = close t.io_uring
 
-  let poll_add t = poll_add t.io_uring
-  let poll_remove t = poll_remove t.io_uring
+  let poll_add t = poll_add t.io_uring 
 
-  let submit t = submit t.io_uring
+  let poll_remove t  = poll_remove t.io_uring
 
-  let wait_timeout_after t = wait_timeout_after t.io_uring
+  (* TOIMPL: add invariant that num_in_flight is always >= 0? *)
+  let submit t = submit t.io_uring |> Int63.to_int_exn
 
-  let wait t = wait t.io_uring
+  (* submit is automatcally called here, so I don't think it's possible to
+   * accurately keep track of in-flight requests if we use liburing *)
+  let wait_timeout_after t span =
+    t.completions <- wait_timeout_after t.io_uring t.completion_buffer span
+  ;;
+
+  let wait t ~timeout =
+    t.completions <- wait t.io_uring t.completion_buffer timeout
+  ;;
+
+  let iter_completions t ~f =
+    (*print_s [%message "iter_completions" (t.completions : int)];*)
+    for i = 0 to t.completions - 1 do
+      let user_data = cqe_user_data t.completion_buffer i in
+      let res = cqe_res t.completion_buffer i in
+      let flags = cqe_flags t.completion_buffer i in
+      (*(match User_data.kind user_data with
+      | Poll ->
+        let file_descr = User_data.file_descr user_data in
+        let flags_ = User_data.flags user_data in
+        print_s [%message "iter" (i : int) (file_descr : File_descr.t) (flags_ : Flags.t) (res : int) (flags : int)]);*)
+      f ~user_data ~res ~flags
+    done
+  ;;
+
+  module Expert = struct
+    let clear_completions t =
+      t.completions <- 0
+    ;;
+  end
 end
 
 let cores                          = Ok cores

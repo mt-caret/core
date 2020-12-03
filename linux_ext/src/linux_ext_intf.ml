@@ -587,26 +587,22 @@ module type S = sig
 
     val poll_remove : [> `Poll ] t -> File_descr.t -> Flags.t -> bool
 
-    val submit : _ t -> Int63.t
-
-    module Cqe : sig
-      type 'a t =
-        { user_data : 'a User_data.t
-        ; ret : Int63.t
-        } [@@deriving sexp_of]
-    end
+    val submit : _ t -> int
 
     (* TOIMPL: fix doc *)
     (** [wait] waits for events until [~timeout] has passed (in nanoseconds),
         then returns the tag given to it by [poll_add] and 0 if it has timed out.
         passing in 0 for [~timeout] will cause it return immediately, and a
         negative value will cause it to wait indefinitely. *)
-    val wait
-      : 'a t
-      -> timeout:[ `Never | `Immediately | `After of Time_ns.Span.t ]
-      -> 'a Cqe.t list
+    val wait : 'a t -> timeout:[ `Never | `Immediately | `After of Time_ns.Span.t ] -> unit
 
-    val wait_timeout_after : 'a t -> Time_ns.Span.t -> 'a Cqe.t list
+    val wait_timeout_after : 'a t -> Time_ns.Span.t -> unit
+
+    val iter_completions : 'a t -> f:(user_data:('a User_data.t) -> res:int -> flags:int -> unit) -> unit
+
+    module Expert : sig
+      val clear_completions : 'a t -> unit
+    end
   end
 
   module Extended_file_attributes : sig
